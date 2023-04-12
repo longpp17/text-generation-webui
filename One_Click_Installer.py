@@ -12,7 +12,8 @@ from pathlib import Path
 # using micromamba (an 8mb static-linked single-file binary, conda replacement).
 # This enables a user to install this project without manually installing conda and git.
 
-print("WARNING: This script relies on Micromamba which may have issues on some systems when installed under a path with spaces.")
+print(
+    "WARNING: This script relies on Micromamba which may have issues on some systems when installed under a path with spaces.")
 print("         May also have issues with long paths.\n")
 
 input("Press enter to continue...")
@@ -52,53 +53,100 @@ except subprocess.CalledProcessError:
     pass
 
 
-# (if necessary) install git and conda into a contained environment
-if packages_to_install:
-    # Download micromamba
-    if umamba_exists == "F":
-        print(f"Downloading Micromamba from {micromamba_download_url} to {mamba_root_prefix}\\micromamba.exe")
+def run_command_with_retries(command, max_retries=3):
+    retry_count = 0
+    command_str = ' '.join(command)
 
-        mamba_root_prefix.mkdir(parents=True, exist_ok=True)
-        subprocess.run(f"curl -Lk {micromamba_download_url} > {mamba_root_prefix}\\micromamba.exe", shell=True, check=True)
+    while retry_count <= max_retries:
+        try:
+            subprocess.run(command, check=True)
+            return  # Exit the loop and function if the command is successful
+        except subprocess.CalledProcessError as e:
+            print(f"Attempt {retry_count + 1} failed with error: {e}")
+            print(f"Failed command: {command_str}")
+            retry_count += 1
 
-        # Test the mamba binary
-        print("Micromamba version:")
-        subprocess.run([str(mamba_root_prefix / "micromamba.exe"), "--version"], check=True)
+    while True:
+        user_input = input("Do you want to suspend the program (s) or continue trying (c)? ").lower()
+        if user_input == 's':
+            print("Suspending the program.")
+            sys.exit()
 
-    # Create micromamba hook
-    if not (mamba_root_prefix / "condabin" / "micromamba.bat").exists():
-        subprocess.run([str(mamba_root_prefix / "micromamba.exe"), "shell", "hook"], check=True)
-
-    # Create the installer env
-    if not install_env_dir.exists():
-        print(f"Packages to install: {packages_to_install}")
-        subprocess.run([str(mamba_root_prefix / "micromamba.exe"), "create", "-y", "--prefix",     str(install_env_dir), channel, packages_to_install], check=True)
+        elif user_input == 'c':
+            retry_count = 0
+            max_retries = 3
+        else:
+            print("Invalid input. Please enter 's' to suspend or 'c' to continue trying.")
 
 
-# Check if conda environment was actually created
-if not (install_env_dir / "python.exe").exists():
-    print("\nConda environment is empty.")
-    sys.exit()
+def install_package():
+    # (if necessary) install git and conda into a contained environment
+    if packages_to_install:
+        # Download micromamba
+        if umamba_exists == "F":
+            print(f"Downloading Micromamba from {micromamba_download_url} to {mamba_root_prefix}\\micromamba.exe")
+
+            mamba_root_prefix.mkdir(parents=True, exist_ok=True)
+            subprocess.run(f"curl -Lk {micromamba_download_url} > {mamba_root_prefix}\\micromamba.exe", shell=True,
+                           check=True)
+
+            # Test the mamba binary
+            print("Micromamba version:")
+            run_command_with_retries([str(mamba_root_prefix / "micromamba.exe"), "--version"])
+
+        # Create micromamba hook
+        if not (mamba_root_prefix / "condabin" / "micromamba.bat").exists():
+            run_command_with_retries([str(mamba_root_prefix / "micromamba.exe"), "shell", "hook"])
+
+        # Create the installer env
+        if not install_env_dir.exists():
+            print(f"Packages to install: {packages_to_install}")
+            run_command_with_retries(
+                [str(mamba_root_prefix / "micromamba.exe"), "create", "-y", "--prefix", str(install_env_dir), channel,
+                 packages_to_install])
+
+    # Check if conda environment was actually created
+    if not (install_env_dir / "python.exe").exists():
+        print("\nConda environment is empty." + "python environment does not exist")
+        user_input = input("Do you want to suspend the program (s) or continue trying (c)? ").lower()
+        if user_input == 's':
+            print("Suspending the program.")
+            sys.exit()
+        elif user_input == 'c':
+            install_package()
+        else:
+            print("Invalid input. exiting")
+            sys.exit()
+
+
+install_package()
 
 # Activate installer env
-subprocess.run([str(mamba_root_prefix / "condabin" / "micromamba.bat"), "activate", str(install_env_dir)], check=True)
+run_command_with_retries([str(mamba_root_prefix / "condabin" / "micromamba.bat"), "activate", str(install_env_dir)])
 
 # Clone the repository and install the pip requirements
 webui_dir = script_dir / "text-generation-webui"
 if webui_dir.exists():
     os.chdir(webui_dir)
-    subprocess.run(["git", "pull"], check=True)
+    run_command_with_retries(["git", "pull"])
+
 else:
-    subprocess.run(["git", "clone", repo_url], check=True)
-    subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "https://github.com/jllllll/bitsandbytes-windows-webui/raw/main/bitsandbytes-0.37.2-py3-none-any.whl"], check=True)
+    run_command_with_retries(["git", "clone", repo_url])
+    run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install",
+                    "https://github.com/jllllll/bitsandbytes-windows-webui/raw/main/bitsandbytes-0.37.2-py3-none-any.whl"])
     os.chdir(webui_dir)
 
-subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "requirements.txt", "--upgrade"], check=True)
-subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/api/requirements.txt", "--upgrade"], check=True)
-subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/elevenlabs_tts/requirements.txt", "--upgrade"], check=True)
-subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/google_translate/requirements.txt", "--upgrade"], check=True)
-subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/silero_tts/requirements.txt", "--upgrade"], check=True)
-subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/whisper_stt/requirements.txt", "--upgrade"], check=True)
+run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "requirements.txt", "--upgrade"])
+run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/api/requirements.txt", "--upgrade"])
+run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/elevenlabs_tts/requirements.txt",
+     "--upgrade"])
+run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/google_translate/requirements.txt",
+     "--upgrade"])
+run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/silero_tts/requirements.txt",
+     "--upgrade"])
+run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "extensions/whisper_stt/requirements.txt",
+     "--upgrade"])
+
 
 # Skip GPTQ install if CPU only
 if gpu_choice != "A":
@@ -113,14 +161,17 @@ os.chdir(repositories_dir)
 
 gptq_dir = repositories_dir / "GPTQ-for-LLaMa"
 if not gptq_dir.exists():
-    subprocess.run(["git", "clone", "https://github.com/oobabooga/GPTQ-for-LLaMa.git", "-b", "cuda"], check=True)
+
+    run_command_with_retries(["git", "clone", "https://github.com/oobabooga/GPTQ-for-LLaMa.git", "-b", "cuda"])
+
     os.chdir(gptq_dir)
-    subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "requirements.txt"], check=True)
-    subprocess.run([str(install_env_dir / "python.exe"), "setup_cuda.py", "install"], check=True)
+    run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install", "-r", "requirements.txt"])
+    run_command_with_retries([str(install_env_dir / "python.exe"), "setup_cuda.py", "install"])
 
     if not (install_env_dir / "lib" / "site-packages" / "quant_cuda-0.0.0-py3.10-win-amd64.egg").exists():
         print("CUDA kernel compilation failed. Will try to install from wheel.")
-        subprocess.run([str(install_env_dir / "python.exe"), "-m", "pip", "install", "https://github.com/jllllll/GPTQ-for-LLaMa-Wheels/raw/main/quant_cuda-0.0.0-cp310-cp310-win_amd64.whl"], check=True)
+        run_command_with_retries([str(install_env_dir / "python.exe"), "-m", "pip", "install",
+                        "https://github.com/jllllll/GPTQ-for-LLaMa-Wheels/raw/main/quant_cuda-0.0.0-cp310-cp310-win_amd64.whl"])
+
 
 input("Press enter to continue...")
-
