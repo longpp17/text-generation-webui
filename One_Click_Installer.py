@@ -1,7 +1,7 @@
 '''todo: if conda is empty give user a option to reinstall'''
 '''todo: if conda environment creation failed attempt to reinstall it for 3 times, if still can't gave user a option to 
 suspend or reinstall, and gave a precise version of why it failed'''
-
+''''the formal version is on PCCCCCC'''
 import os
 import sys
 import subprocess
@@ -50,7 +50,7 @@ try:
     subprocess.run([str(mamba_root_prefix / "micromamba.exe"), "--version"], check=True)
     umamba_exists = "T"
 except subprocess.CalledProcessError:
-    pass
+    umamba_exists = "F"
 
 
 def run_command_with_retries(command, max_retries=3):
