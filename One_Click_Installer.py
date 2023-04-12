@@ -96,7 +96,7 @@ def install_package():
 
         # Create micromamba hook
         if not (mamba_root_prefix / "condabin" / "micromamba.bat").exists():
-            run_command_with_retries([str(mamba_root_prefix / "micromamba.exe"), "shell", "hook"])
+            run_command_with_retries([str(mamba_root_prefix / "micromamba.exe"), "shell", "hook", "-s", "cmd"])
 
         # Create the installer env
         if not install_env_dir.exists():
